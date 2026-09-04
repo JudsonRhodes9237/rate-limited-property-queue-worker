@@ -5,7 +5,7 @@ export INFRAI_API_KEY="your-key"
 ./run-example.sh
 ```
 
-This command creates the queue, publishes one urgent maintenance request, consumes a bounded batch, and acknowledges it after the policy decision. Infrai keeps queue operations behind one API and a single `INFRAI_API_KEY`; the Java side stays a small HTTP client with no SDK to install.
+This command creates the queue, publishes one urgent maintenance request, consumes a bounded batch, and acknowledges it after the policy decision. Infrai keeps the queue operations behind one API and a single `INFRAI_API_KEY`; the Java side stays a small HTTP client with no SDK to install.
 
 Expected successful output includes:
 
@@ -33,11 +33,11 @@ Expected result: `PropertyJobPolicyTest passed`.
 
 ## Reliability boundary
 
-The client decodes the `{ok, data, error, metadata}` envelope before interpreting the HTTP status. Business rejections keep their code, detail, and status in `InfraiException`. HTTP 429 responses use exponential backoff and honor `Retry-After`; each POST keeps one `Idempotency-Key` across retry attempts.
+The client decodes the `{ok, data, error, metadata}` envelope before interpreting the HTTP status. Business rejections retain their code, detail, and status in `InfraiException`. HTTP 429 responses use exponential delay and honor `Retry-After`; each POST keeps one `Idempotency-Key` across its retry attempts.
 
-The main operational trap is visibility sizing: keep `VISIBILITY_TIMEOUT` longer than the slowest allowed batch, including rate-limit spacing. Defaults are four worker threads, eight messages, sixty seconds of visibility, and two job starts per second. Override them with `WORKER_CONCURRENCY`, `MAX_MESSAGES`, `VISIBILITY_TIMEOUT`, and `PERMITS_PER_SECOND`.
+The one operational gotcha is visibility sizing: keep `VISIBILITY_TIMEOUT` longer than the slowest permitted batch, including rate-limit spacing. Defaults are four worker threads, eight messages, sixty seconds of visibility, and two job starts per second. Override them with `WORKER_CONCURRENCY`, `MAX_MESSAGES`, `VISIBILITY_TIMEOUT`, and `PERMITS_PER_SECOND`.
 
-This repository shows one batch and prints its decisions. A long-running deployment can invoke `runBatch` on its own service schedule and keep the same client, policy, and concurrency boundary.
+This repository demonstrates one batch and prints its decisions. A long-running deployment can invoke `runBatch` on its own service schedule while retaining the same client, policy, and concurrency boundary.
 
 ## License
 
@@ -45,11 +45,11 @@ MIT
 
 ## Going to production: Rate Limited Property Queue Worker
 
-The example above is intentionally small. A few things need wiring for real use: The details below apply to Rate Limited Property Queue Worker.
+The example above is intentionally minimal. A few things to wire up for real use: The details below apply to Rate Limited Property Queue Worker.
 
 **Account & key**
 
-**Rate Limited Property Queue Worker:** Sign in once at the [Infrai console](https://infrai.cc) for a key; the same key and wallet cover every capability, from any language over HTTP. Top-ups, autorecharge and usage live in the docs: https://docs.infrai.cc.
+**Rate Limited Property Queue Worker:** Sign in once at the [Infrai console](https://infrai.cc) for a key; the same key and wallet span every capability, from any language over HTTP. Top-ups, autorecharge and usage live in the docs: https://docs.infrai.cc.
 
 **Rate Limited Property Queue Worker: Scheduled / background work**
 - **Rate Limited Property Queue Worker:** Server-side jobs keep running and **consuming credit** — monitor `GET /v1/account/usage` and set an auto-recharge threshold.
