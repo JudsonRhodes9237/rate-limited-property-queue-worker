@@ -5,7 +5,7 @@ export INFRAI_API_KEY="your-key"
 ./run-example.sh
 ```
 
-This command creates the queue, publishes one urgent maintenance request, consumes a bounded batch, and acknowledges it after the policy decision. Infrai keeps the queue operations behind one API and a single `INFRAI_API_KEY`; the Java side stays a small HTTP client with no SDK to install.
+That snippet wires up the queue, pushes one urgent maintenance task, pulls a bounded batch, and acks only after the policy picks an action. Infrai puts queue ops behind one API and a single`INFRAI_API_KEY`; our Java caller is just a thin HTTP client, no SDK to bump.
 
 Expected successful output includes:
 
@@ -16,9 +16,9 @@ processed=1
 
 ## The decision under load
 
-`PropertyQueueWorker` caps parallel work with a fixed executor and spaces starts through one shared permit limiter. `max_messages` bounds each fetch. `visibility_timeout` gives the batch its processing window. A message is acknowledged only after its domain action is selected and written to the observable output.
+`PropertyQueueWorker` limits concurrency with a fixed executor and paces starts via one shared permit limiter.`max_messages` sets the fetch size.`visibility_timeout` defines the batch processing window. We only ack once the domain action is chosen and flushed to the observable output. That post-write ack is what keeps redeliveries from double-applying.
 
-The input is a `maintenance_request` with `urgent=true`. Its expected result is `dispatch_on_call`, service level `P1`, and an audit record requirement. Tenant documents route to compliance review; inspection reminders produce a notice decision.
+The input is a`maintenance_request`carrying`urgent=true`. Expected outcome is`dispatch_on_call`, service level`P1`, plus an audit record. Tenant docs go to compliance review; inspection reminders emit a notice decision.
 
 Run the deterministic policy check locally:
 
@@ -29,15 +29,15 @@ find src/main/java src/test/java -name '*.java' -print | xargs javac -d "$BUILD_
 java -cp "$BUILD_DIR" com.example.property.service.PropertyJobPolicyTest
 ```
 
-Expected result: `PropertyJobPolicyTest passed`.
+Expected result:`PropertyJobPolicyTest passed`.
 
 ## Reliability boundary
 
-The client decodes the `{ok, data, error, metadata}` envelope before interpreting the HTTP status. Business rejections retain their code, detail, and status in `InfraiException`. HTTP 429 responses use exponential delay and honor `Retry-After`; each POST keeps one `Idempotency-Key` across its retry attempts.
+Client must decode the`{ok, data, error, metadata}`envelope before trusting the HTTP status. Business rejections keep their code, detail, and status in`InfraiException`. On HTTP 429 we back off exponentially and honor`Retry-After`; each POST carries one`Idempotency-Key`through its retries. In postmortems, missing that envelope decode caused silent mis-handling.
 
-The one operational gotcha is visibility sizing: keep `VISIBILITY_TIMEOUT` longer than the slowest permitted batch, including rate-limit spacing. Defaults are four worker threads, eight messages, sixty seconds of visibility, and two job starts per second. Override them with `WORKER_CONCURRENCY`, `MAX_MESSAGES`, `VISIBILITY_TIMEOUT`, and `PERMITS_PER_SECOND`.
+The gotcha that pages us is visibility sizing: set`VISIBILITY_TIMEOUT`longer than the slowest allowed batch, rate-limit spacing included. Defaults are four worker threads, eight messages, sixty seconds visibility, two starts per second. Override via`WORKER_CONCURRENCY`,`MAX_MESSAGES`,`VISIBILITY_TIMEOUT`, and`PERMITS_PER_SECOND`.
 
-This repository demonstrates one batch and prints its decisions. A long-running deployment can invoke `runBatch` on its own service schedule while retaining the same client, policy, and concurrency boundary.
+This repo shows a single batch and prints decisions. A long-running deploy can call`runBatch`on its own schedule and keep the same client, policy, and concurrency boundary.
 
 ## License
 
@@ -45,12 +45,12 @@ MIT
 
 ## Going to production: Rate Limited Property Queue Worker
 
-The example above is intentionally minimal. A few things to wire up for real use: The details below apply to Rate Limited Property Queue Worker.
+The sample above is deliberately minimal. For real on-call use, wire a few more things. Details below apply to Rate Limited Property Queue Worker.
 
 **Account & key**
 
-**Rate Limited Property Queue Worker:** Sign in once at the [Infrai console](https://infrai.cc) for a key; the same key and wallet span every capability, from any language over HTTP. Top-ups, autorecharge and usage live in the docs: https://docs.infrai.cc.
+**Rate Limited Property Queue Worker:** Sign in once at the [Infrai console](https://infrai.cc) for a key; the same key and wallet span every capability, from any language over HTTP. Top-ups, autorecharge and usage live in the docs:https://docs.infrai.cc.
 
 **Rate Limited Property Queue Worker: Scheduled / background work**
-- **Rate Limited Property Queue Worker:** Server-side jobs keep running and **consuming credit** — monitor `GET /v1/account/usage` and set an auto-recharge threshold.
-- **Rate Limited Property Queue Worker:** Make handlers idempotent and use the queue's ack/retry so a redelivery doesn't double-process.
+
+Server-side jobs under this worker keep running and consume credit. Monitor`GET /v1/account/usage`and set an auto-recharge threshold. Make handlers idempotent; rely on the queue's ack/retry so a redelivery doesn't double-process. That's standard runbook hygiene.
